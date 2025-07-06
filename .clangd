@@ -1,0 +1,9 @@
+CompileFlags:
+  # When using clangd update this entry to point at the desired
+  # configuration directory to pick up the compile_commands.json
+  CompilationDatabase: build/meson.run.linux.x86_64.Local
+  Add: [-xc++, -Wall]
+  Remove: [-W*]
+  Compiler: clang++
+Index:
+  StandardLibrary: no

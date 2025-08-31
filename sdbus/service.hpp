@@ -13,7 +13,7 @@
 #include <boost/asio/detail/io_object_impl.hpp>
 #include <boost/asio/detail/reactor.hpp>
 #include <boost/intrusive/list.hpp>
-#include <sdbus/sdbus.hpp>
+#include <sdbus/message.hpp>
 
 #include <cmath>
 #include <functional>
@@ -24,155 +24,7 @@
 namespace boost::asio::sdbus
 {
 
-class message
-{
-    struct ref_wrapper
-    {
-        ref_wrapper(sd_bus_message*& ref) : _ref(ref), _new(ref)
-        {}
-        ~ref_wrapper()
-        {
-            if (_ref)
-            {
-                sd_bus_message_unref(_ref);
-            }
-            _ref = _new;
-        }
-        sd_bus_message*& _ref;
-        sd_bus_message* _new;
-
-        operator sd_bus_message**()
-        {
-            return &_new;
-        }
-    };
-
-  public:
-    struct move_tag
-    {};
-
-    constexpr message() = default;
-    constexpr message(sd_bus_message* m) : _m(sd_bus_message_ref(m))
-    {
-        printf("MESSAGE(%p): CONSTRUCT m=%p\n", static_cast<void*>(this), static_cast<void*>(_m));
-    }
-    constexpr message(move_tag, sd_bus_message* m) : _m(m)
-    {
-        printf("MESSAGE(%p): CONSTRUCT m=%p\n", static_cast<void*>(this), static_cast<void*>(_m));
-    }
-    constexpr message(message&& m) : _m(m._m)
-    {
-        printf("MESSAGE(%p): MOVE CONSTRUCT m=%p o = %p\n", static_cast<void*>(this),
-               static_cast<void*>(m._m), static_cast<void*>(&m));
-        m._m = nullptr;
-    }
-    message(const message& m) : _m(sd_bus_message_ref(m._m))
-    {
-        printf("MESSAGE(%p): COPY CONSTRUCT m=%p\n", static_cast<void*>(this),
-               static_cast<void*>(_m));
-    }
-    ~message()
-    {
-        printf("MESSAGE(%p): DESTRUCT m=%p\n", static_cast<void*>(this), static_cast<void*>(_m));
-        sd_bus_message_unref(_m);
-    }
-    const char* get_signature(int complete = 1) const
-    {
-        return sd_bus_message_get_signature(_m, complete);
-    }
-    message& operator=(message&& m)
-    {
-        printf("MESSAGE(%p): MOVE FROM m=%p o = %p\n", static_cast<void*>(this),
-               static_cast<void*>(m._m), static_cast<void*>(&m));
-        _m = m._m;
-        m._m = nullptr;
-        return *this;
-    }
-    operator bool() const
-    {
-        return !!_m;
-    }
-    operator sd_bus_message*() const
-    {
-        return _m;
-    }
-    template <typename... T>
-    void append(T&&... v) const
-    {
-        (append_one(std::forward<T>(v)), ...);
-    }
-
-    template <typename T>
-    void append_one(T&& v) const
-    {
-        ::sdbus::write(_m, std::forward<T>(v));
-    }
-    ref_wrapper reference()
-    {
-        return ref_wrapper(_m);
-    }
-
-    template <typename T>
-    T read() const
-    {
-        T v;
-        ::sdbus::read(_m, v);
-        return v;
-    }
-
-    struct container_scope
-    {
-        container_scope() = delete;
-        container_scope(const message& m) : _m(m)
-        {}
-        container_scope(const container_scope&) = delete;
-        container_scope(container_scope&& s) : _m(s._m)
-        {
-            s._exit = false;
-        }
-        ~container_scope()
-        {
-            if (_exit)
-            {
-                sd_bus_message_exit_container(_m);
-            }
-        }
-
-      private:
-        const message& _m;
-        bool _exit = true;
-    };
-
-    container_scope enter_array() const
-    {
-        return enter_container(SD_BUS_TYPE_ARRAY);
-    }
-
-    bool at_end(bool complete = false) const
-    {
-        auto err = sd_bus_message_at_end(_m, complete);
-        if (err < 0)
-        {
-            throw std::system_error(std::error_code(err, std::system_category()));
-        }
-        return static_cast<bool>(err);
-    }
-
-  private:
-    container_scope enter_container(char type) const
-    {
-        auto err = sd_bus_message_enter_container(_m, type, nullptr);
-        if (err < 0)
-        {
-            throw std::system_error(std::error_code(err, std::system_category()));
-        }
-
-        return container_scope(*this);
-    }
-
-  private:
-    sd_bus_message* _m = nullptr;
-};
+using message = ::sdbus::message;
 
 namespace detail
 {
@@ -359,13 +211,13 @@ class bus_service : public execution_context_service_base<bus_service>
         execution_context_service_base<bus_service>(context),
         _reactor(use_service<reactor>(context)), _scheduler(use_service<scheduler>(context))
     {
-        printf("BUS_SERVICE: INIT\n");
+        // printf("BUS_SERVICE: INIT\n");
         _reactor.init_task();
     }
 
     void shutdown() override
     {
-        printf("BUS_SERVICE: SHUTDOWN\n");
+        // printf("BUS_SERVICE: SHUTDOWN\n");
         mutex::scoped_lock lock(_mutex);
         while (_states.size())
         {
@@ -375,7 +227,7 @@ class bus_service : public execution_context_service_base<bus_service>
 
     void construct(implementation_type&)
     {
-        printf("BUS_SERVICE: CONSTRUCT\n");
+        // printf("BUS_SERVICE: CONSTRUCT\n");
     }
 
     static void move_construct(implementation_type& impl, implementation_type& other_impl)
@@ -399,7 +251,7 @@ class bus_service : public execution_context_service_base<bus_service>
 
     void assign(implementation_type& impl, sd_bus* bus)
     {
-        printf("BUS_SERVICE: ASSIGN(%p)\n", static_cast<void*>(bus));
+        // printf("BUS_SERVICE: ASSIGN(%p)\n", static_cast<void*>(bus));
         destroy(impl);
         impl.state = add_state(bus);
     }
@@ -412,8 +264,8 @@ class bus_service : public execution_context_service_base<bus_service>
         mutex::scoped_lock lock(_mutex);
         auto state = new bus_state(bus, _reactor, _scheduler);
         _states.push_back(*state);
-        printf("BUS_SERVICE: ADD_STATE(bus=%p, state=%p)\n", static_cast<void*>(bus),
-               static_cast<void*>(state));
+        // printf("BUS_SERVICE: ADD_STATE(bus=%p, state=%p)\n", static_cast<void*>(bus),
+        //        static_cast<void*>(state));
         return state;
     }
 
@@ -450,13 +302,13 @@ class slot_service : public execution_context_service_base<slot_service>
 
     slot_service(execution_context& context) : execution_context_service_base<slot_service>(context)
     {
-        printf("SLOT_SERVICE: INIT\n");
+        // printf("SLOT_SERVICE: INIT\n");
     }
 
     void shutdown() override
     {
-        printf("SLOT_SERVICE: SHUTDOWN\n");
-        // NOTE: nothing to do
+        // printf("SLOT_SERVICE: SHUTDOWN\n");
+        //  NOTE: nothing to do
     }
 
     void construct(implementation_type&)
@@ -478,7 +330,7 @@ class slot_service : public execution_context_service_base<slot_service>
 
     void assign(implementation_type& impl, slot_state* state)
     {
-        printf("SLOT_SERVICE: ASSIGN state=%p\n", static_cast<void*>(state));
+        // printf("SLOT_SERVICE: ASSIGN state=%p\n", static_cast<void*>(state));
         destroy(impl);
         impl.state = state;
     }
@@ -599,7 +451,7 @@ class slot
     /// Construct a slot object bound to slot state.
     slot(const executor_type& ex, detail::slot_state* state) : _impl(0, ex)
     {
-        printf("SLOT: CONSTRUCT slot_state=%p\n", static_cast<void*>(state));
+        // printf("SLOT: CONSTRUCT slot_state=%p\n", static_cast<void*>(state));
         _impl.get_service().assign(_impl.get_implementation(), state);
     }
 
@@ -634,44 +486,65 @@ class bus
         _impl(0, 0, context)
     {}
 
+    /// Construct a default bus.
     void bus_default()
+    {
+        sd_bus* b;
+        sd_bus_default(&b);
+        _impl.get_service().assign(_impl.get_implementation(), b);
+    }
+
+    /// Construct a default system bus.
+    bus bus_default_system()
     {
         sd_bus* b;
         sd_bus_default_system(&b);
         _impl.get_service().assign(_impl.get_implementation(), b);
-        printf("BUS: DEFAULT bus=%p state=%p\n", static_cast<void*>(b),
-               static_cast<void*>(_impl.get_implementation().state));
-    }
-
-    /// Construct a default system bus.
-    template <typename ExecutorOrExecutionContext>
-    static bus bus_default_system(ExecutorOrExecutionContext&& ex)
-    {
-        sd_bus* b;
-        sd_bus_default_system(&b);
-        return bus{std::forward<ExecutorOrExecutionContext>, b};
     }
 
     /// Construct a default user bus.
-    template <typename ExecutorOrExecutionContext>
-    static bus bus_default_user(ExecutorOrExecutionContext&& ex)
+    void bus_default_user()
     {
         sd_bus* b;
         sd_bus_default_user(&b);
-        return bus{std::forward<ExecutorOrExecutionContext>, b};
+        _impl.get_service().assign(_impl.get_implementation(), b);
+    }
+
+    executor_type get_executor()
+    {
+        return _impl.get_executor();
     }
 
     /// Add new match rule.
     slot<executor_type> add_match(const std::string_view& match_string)
     {
-        return {_impl.get_executor(), _impl.get_implementation()->add_match(match_string)};
+        return {_impl.get_executor(), _impl.get_implementation().state->add_match(match_string)};
     }
 
     /// Invoke a D-Bus method call.
     slot<executor_type> call(const message& m, u_int64_t usec = 0)
     {
-        printf("BUS: CALL state=%p\n", static_cast<void*>(_impl.get_implementation().state));
+        // printf("BUS: CALL state=%p\n", static_cast<void*>(_impl.get_implementation().state));
         return slot{_impl.get_executor(), _impl.get_implementation().state->call(m, usec)};
+    }
+
+    message call_sync(const message& m, u_int64_t usec = 0)
+    {
+        auto s = _impl.get_implementation().state;
+        sd_bus_message* rm;
+
+        // printf("BUS: CALL_SYNC state=%p\n",
+        // static_cast<void*>(_impl.get_implementation().state));
+
+        int ret = sd_bus_call(s->get_bus(), m, usec, nullptr, &rm);
+
+        // printf("RET:%d SIG: %s\n", ret, sd_bus_message_get_signature(rm, 1));
+
+        if (ret < 0)
+        {
+            throw std::system_error(std::error_code(-ret, std::system_category()));
+        }
+        return rm;
     }
 
     template <typename... Args>
@@ -681,8 +554,8 @@ class bus
         auto s = _impl.get_implementation().state;
         sd_bus_message* m;
 
-        printf("BUS: NEW_METHOD_CALL state=%p\n",
-               static_cast<void*>(_impl.get_implementation().state));
+        // printf("BUS: NEW_METHOD_CALL state=%p\n",
+        //        static_cast<void*>(_impl.get_implementation().state));
 
         int ret = sd_bus_message_new_method_call(
             s->get_bus(), &m, service.data(), object_path.data(), interface.data(), method.data());
@@ -692,7 +565,7 @@ class bus
             m1.append(std::forward<Args>(args)...);
         }
 
-        printf("SIG: %s\n", sd_bus_message_get_signature(m, 1));
+        // printf("SIG: %s\n", sd_bus_message_get_signature(m, 1));
         return m1;
     }
 

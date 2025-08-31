@@ -41,27 +41,29 @@ class message
 
     constexpr message(sd_bus_message* m) : _m(sd_bus_message_ref(m))
     {
-        printf("MESSAGE(%p): CONSTRUCT m=%p\n", static_cast<void*>(this), static_cast<void*>(_m));
+        // printf("MESSAGE(%p): CONSTRUCT m=%p\n", static_cast<void*>(this),
+        // static_cast<void*>(_m));
     }
 
     constexpr message(move_tag, sd_bus_message* m) : _m(m)
     {
-        printf("MESSAGE(%p): CONSTRUCT m=%p\n", static_cast<void*>(this), static_cast<void*>(_m));
+        // printf("MESSAGE(%p): CONSTRUCT m=%p\n", static_cast<void*>(this),
+        // static_cast<void*>(_m));
     }
     constexpr message(message&& m) : _m(m._m)
     {
-        printf("MESSAGE(%p): MOVE CONSTRUCT m=%p o = %p\n", static_cast<void*>(this),
-               static_cast<void*>(m._m), static_cast<void*>(&m));
+        // printf("MESSAGE(%p): MOVE CONSTRUCT m=%p o = %p\n", static_cast<void*>(this),
+        //        static_cast<void*>(m._m), static_cast<void*>(&m));
         m._m = nullptr;
     }
     message(const message& m) : _m(sd_bus_message_ref(m._m))
     {
-        printf("MESSAGE(%p): COPY CONSTRUCT m=%p\n", static_cast<void*>(this),
-               static_cast<void*>(_m));
+        // printf("MESSAGE(%p): COPY CONSTRUCT m=%p\n", static_cast<void*>(this),
+        //        static_cast<void*>(_m));
     }
     ~message()
     {
-        printf("MESSAGE(%p): DESTRUCT m=%p\n", static_cast<void*>(this), static_cast<void*>(_m));
+        // printf("MESSAGE(%p): DESTRUCT m=%p\n", static_cast<void*>(this), static_cast<void*>(_m));
         sd_bus_message_unref(_m);
     }
     const char* get_signature(int complete = 1) const
@@ -70,8 +72,8 @@ class message
     }
     message& operator=(message&& m)
     {
-        printf("MESSAGE(%p): MOVE FROM m=%p o = %p\n", static_cast<void*>(this),
-               static_cast<void*>(m._m), static_cast<void*>(&m));
+        // printf("MESSAGE(%p): MOVE FROM m=%p o = %p\n", static_cast<void*>(this),
+        //        static_cast<void*>(m._m), static_cast<void*>(&m));
         _m = m._m;
         m._m = nullptr;
         return *this;

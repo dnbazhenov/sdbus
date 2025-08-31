@@ -61,6 +61,10 @@ struct sig_string
     {
         return value;
     }
+    constexpr std::string_view sv() const noexcept
+    {
+        return {value, Nm - 1};
+    }
     constexpr operator std::string_view() const noexcept
     {
         return std::string_view(data(), Nm - 1);
@@ -131,6 +135,15 @@ static inline bool operator==(const char* n, const sig_string<N>& lhs)
 {
     return !std::strcmp(n, lhs.data());
 }
+
+namespace string_literals
+{
+template <sig_string A>
+constexpr auto operator""_ss()
+{
+    return A;
+}
+} // namespace string_literals
 
 } // namespace sdbus
 
